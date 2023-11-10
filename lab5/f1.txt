@@ -1,0 +1,1 @@
+Enter a string both upper case and LOWER cases
