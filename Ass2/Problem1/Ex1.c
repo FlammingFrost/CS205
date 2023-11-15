@@ -1,4 +1,6 @@
 # include <stdio.h>
+# include <stdlib.h>
+# include <string.h>
 
 /*
 The memory structure of a Panbox is as follows:
@@ -16,14 +18,81 @@ typedef struct PandoraBox
     void *data;     // A type-agnostic pointer to store data.
 } Panbox;
 
+int isValidBox(Panbox * panbox){
+    // case 0: invalid box
+    // case 1: valid non-empty box
+    // case 2: empty box
+    if (panbox == NULL)
+    {
+        return 0;
+    }
+    if (panbox->item_count < 0)
+    {
+        return 0;
+    }
+    if (panbox->item_count == 0)
+    {
+        return 2;
+    }
+    return 1;
+}
 
+void delete_box(Panbox * Panbox)
+{
+    if (Panbox == NULL)
+    {
+        return;
+    }
+    if (Panbox->item_size != NULL)
+    {
+        free(Panbox->item_size);
+    }
+    if (Panbox->data != NULL)
+    {
+        free(Panbox->data);
+    }
+    free(Panbox);
+    return;
+}
+
+void delete_ptr(void * ptr)
+{
+    if (ptr == NULL)
+    {
+        return;
+    }
+    free(ptr);
+    return;
+}
+
+size_t get_dataSize(Panbox * panbox)
+{
+    if (isValidBox(panbox) == 0)
+    {
+        return 0;
+    }
+    size_t total_size = 0;
+    // empty box
+    if (panbox->item_size == NULL || panbox->data == NULL)
+    {
+        return 0;
+    }
+    // non-empty box
+    for (int i = 0; i < panbox->item_count; i++)
+    {
+        total_size += panbox->item_size[i];
+    }
+    return total_size;
+}
 
 void *mycpy(void *dst, const void *src, size_t size)
 {
     // Lifan: copy (size) bytes from (src) to (dst)
-    dst = (void *)realloc(dst, size * sizeof(char));
-    while (--size >= 0)
+    // ! NOT assign memory to dst, just copy the value
+    // dst = (char *)malloc(size * sizeof(char));
+    while (size > 0)
     {
+        size -= 1;
         *((char *)dst + size ) = *((char *)src + size);
     }
     return NULL;
@@ -42,11 +111,19 @@ void *myset(void *dst, int n, size_t size)
     if ((unsigned) n > 0xff)
     {
         return NULL;
-    }else
+    }
+    else if (size == 0)
     {
-        dst = (void *)realloc(dst, size * sizeof(char));
-        while (--size >= 0)
+        // printf("Warning: size is 0, nothing to set.\n");
+        return NULL;
+    }
+    
+    else
+    {
+        // dst = (void *)malloc(size * sizeof(char));
+        while (size > 0)
         {
+            size -= 1;
             *((char *)dst + size ) = (char) n;
         }
     }
@@ -71,21 +148,24 @@ Panbox *create(int item_count, int item_size[])
     {
         // create a empty Panbox
         Panbox *emptybox = (Panbox *)malloc(sizeof(Panbox)); // @1:Y
-        emptybox->item_count = item_count;
-        emptybox->item_size = NULL; // @2:N
-        emptybox->data = NULL; // @3:N
+        if (emptybox == NULL)
+        {
+            return NULL;
+        }
+        emptybox->item_count = 0;
+        // emptybox->item_size = NULL; // @2:N
+        // emptybox->data = NULL; // @3:N
         return emptybox;
     }
     else
     {
-        
         for (int i = 0; i < item_count; i++)
         {
             if (item_size[i] <= 0)
             {
                 return NULL;
             }
-            total_size += item_count;
+            total_size += item_size[i];
         }
     }    
 
@@ -93,18 +173,42 @@ Panbox *create(int item_count, int item_size[])
 
     // create a Panbox
     Panbox *panbox = (Panbox *)malloc(sizeof(Panbox)); // @1:creat
+    if (panbox == NULL)
+    {
+        return NULL;
+    }
     panbox->item_count = item_count;
-    panbox->item_size = (int *)malloc(item_count * sizeof(int)); // @2:creat
-    panbox->data = (void*)malloc(total_size * sizeof(char)); // @3:creat
+    // panbox->item_size = (int *)malloc(item_count * sizeof(int)); // @2:creat
+    // panbox->data = (void*)calloc(total_size, sizeof(char)); // @3:creat and initialize with 0s
+    int * item_size_ptr = (int *)malloc(item_count * sizeof(int));
+    void * data_ptr = (void*)calloc(total_size, sizeof(char));
+    if (item_size_ptr == NULL || data_ptr == NULL)
+    {
+        free(panbox);
+        if (item_size_ptr != NULL)
+        {
+            free(item_size_ptr);
+        }
+        if (data_ptr != NULL)
+        {
+            free(data_ptr);
+        }
+        return NULL;
+    }else
+    {
+        panbox->item_size = item_size_ptr;
+        panbox->data = data_ptr;
+    }
 
     // create items
-    int pos = 0;
-    int stored_size = 0;
+    // int pos = 0;
+    // int stored_size = 0;
     for (int i = 0; i < item_count; i++)
     {
-        myset(panbox->data + pos, 0, stored_size); // @3:initialize
-        *(panbox->item_size + i) = item_size[i]; // @2:assign
-        pos += item_size[i];
+        // stored_size = item_size[i];
+        // myset((char *)panbox->data + pos, 0, stored_size); // @3:initialize
+        panbox->item_size[i] = item_size[i];
+        // pos += item_size[i];
     }
     return panbox;
 
@@ -131,28 +235,65 @@ Note:
 void append(Panbox *panbox, void *value, int width)
 {
     // exception handling
-    if (width <= 0 || value == NULL || panbox == NULL)
+    if (width <= 0 || value == NULL ||  isValidBox(panbox) == 0)
     {
         return;
     }
     // if is empty box
-    if (panbox->item_size == NULL && panbox->data == NULL)
+    if (isValidBox(panbox) == 2)
     {
-        panbox->item_size = (int *)malloc(sizeof(int));
-        panbox->data = (void *)malloc(width * sizeof(char));
-        *(panbox->item_size) = width;
+        int * item_size_ptr = (int *)malloc(sizeof(int));
+        void * data_ptr = (void *)malloc(width * sizeof(char));
+        if (item_size_ptr == NULL || data_ptr == NULL)
+        {
+            
+            if (item_size_ptr != NULL)
+            {
+                free(item_size_ptr);
+            }
+            if (data_ptr != NULL)
+            {
+                free(data_ptr);
+            }
+            return;
+        }else
+        {
+            panbox->item_count = 1;
+            panbox->item_size = item_size_ptr;
+            panbox->data = data_ptr;
+        }
+        panbox->item_size[0] = width;
         mycpy(panbox->data, value, width);
         return;
     }
     
     // if not empty box, append to the end of the data
-    int total_size = 0;
-    for(int i = 0; i < panbox->item_count; i++)
+    size_t total_size = get_dataSize(panbox);
+    // panbox->item_size = (int *)realloc(panbox->item_size, (panbox->item_count + 1) * sizeof(int));
+    // panbox->data = (void *)realloc(panbox->data, (total_size + width) * sizeof(char));
+    int * item_size_ptr = (int *)realloc(panbox->item_size, (panbox->item_count + 1) * sizeof(int));
+    void * data_ptr = (void *)realloc(panbox->data, (total_size + width) * sizeof(char));
+    if (item_size_ptr == NULL || data_ptr == NULL)
     {
-        total_size += panbox->item_size[i];
+        if (item_size_ptr != NULL)
+        {
+            // invert the change
+            panbox->item_size = (int *)realloc(panbox->item_size, panbox->item_count * sizeof(int));
+        }
+        if (data_ptr != NULL)
+        {
+            // invert the change
+            panbox->data = (void *)realloc(panbox->data, total_size * sizeof(char));
+        }
+        return;
+    }else
+    {
+        panbox->item_size = item_size_ptr;
+        panbox->data = data_ptr;
     }
-    panbox->data = (void *)realloc(panbox->data, (total_size + width) * sizeof(char));
-    mycpy(panbox->data + total_size, value, width);    
+    mycpy(panbox->data + total_size, value, width);
+    panbox->item_count += 1;
+    panbox->item_size[panbox->item_count - 1] = width;
     return;
 }
 /*
@@ -171,7 +312,11 @@ Note:
 void write(Panbox *panbox, int item_id, void *value, int width)
 {
     // exception handling
-    if (item_id>= panbox->item_count || item_id < 0 || width <= 0 || value == NULL || panbox == NULL)
+    if (isValidBox(panbox) != 1)
+    {
+        return;
+    }
+    if (item_id>= panbox->item_count || item_id < 0 || width <= 0 || value == NULL)
     {
         return;
     }
@@ -181,19 +326,23 @@ void write(Panbox *panbox, int item_id, void *value, int width)
     }
     
     int pos = 0;
-    while (item_id-- > 0)
+    int idx = 0;
+    while (idx < item_id)
     {
-        pos += panbox->item_size[item_id];
+        pos += panbox->item_size[idx++];
     }
     int pad_len = panbox->item_size[item_id] - width;
     int pad_byte = 0;
+    int highest_bit;
     if (pad_len > 0)
     {
-        pad_byte = ((((char *)value + width - 1))[-1] & 0x80) ? 0xff : 0x00;
+        highest_bit = *((char *)value + width - 1);
+        pad_byte = (highest_bit & 0x80) ? 0xff : 0x00;
+        // myset(panbox->data + pos, pad_byte, pad_len);
+        myset(panbox->data + pos + width, pad_byte, pad_len);
     }
-    myset(panbox->data + pos, pad_byte, pad_len);
-    mycpy(panbox->data + pos + pad_len, value, width);
-    
+    // mycpy(panbox->data + pos + pad_len, value, width);
+    mycpy(panbox->data + pos, value, width); 
     return;
 }
 /*
@@ -218,17 +367,33 @@ Notes:
 void *read(Panbox *panbox, int item_id)
 {
     // exception handling
-    if (item_id>= panbox->item_count || item_id < 0 || panbox == NULL)
+    if (isValidBox(panbox) != 1)
+    {
+        return NULL;
+    }
+    if (item_id>= panbox->item_count || item_id < 0)
+    {
+        return NULL;
+    }
+    // this should never happen
+    if (panbox->item_size == NULL || panbox->data == NULL)
     {
         return NULL;
     }
     int size = panbox->item_size[item_id];
     int pos = 0;
-    while(item_id-- > 0)
+    int idx = 0;
+    while(idx < item_id)
     {
-        pos += panbox->item_size[item_id];
+        pos += panbox->item_size[idx];
+        idx += 1;
+    
     }
     void *new_data = (void *)malloc(size * sizeof(char));
+    if (new_data == NULL)
+    {
+        return NULL;
+    }
     mycpy(new_data, panbox->data + pos, size);
     return new_data;
 }
@@ -253,9 +418,16 @@ void destroy(Panbox *panbox)
     {
         return;
     }
-    free(panbox->item_size);
-    free(panbox->data);
+    if (panbox->item_size != NULL)
+    {
+        free(panbox->item_size);
+    }
+    if (panbox->data != NULL)
+    {
+        free(panbox->data);
+    }
     free(panbox);
+    
     return;
 }
 /*
@@ -277,26 +449,21 @@ void printc(void *value, int width)
         return;
     }
     int print_anything = 0;
-    while (width-- > 0)
+    int idx = 0;
+    while (idx < width)
     {
-        if (*((char *)value + width) > 32 && *((char *)value + width) != 127)
+        if (*((char *)value + idx) > 32 && *((char *)value + idx) != 127)
         {
-            if (print_anything==0)
+            print_anything = 1;
             {
-                print_anything = 1;
-            }else
-            {
-                printf(" ");
-            }
-            
-            if (*((char *)value + width) > 127)
-            {
-                printf("-");
-            }else
-            {
-                printf("%c",*((char *)value + width));
+                printf("%c ",*((char *)value + idx));
             }         
+        }else if (*((char *)value + idx) < 0)
+        {
+            print_anything = 1;
+            printf("- ");
         }
+        idx++;
     }
     if (print_anything == 1)
     {
@@ -325,10 +492,14 @@ void printx(void *value, int width)
     {
         return;
     }
-    while (width-- > 0)
+    printf("0x");
+    while (width > 0)
     {
-        printf("%02x", *((char *)value + width));
+        unsigned char * temp = (unsigned char *)value + width - 1;
+        printf("%02x", *temp);
+        width -= 1;
     }
+    printf("\n");
     
     
 }
@@ -352,30 +523,44 @@ void hex2byte(void *dst, char *hex)
         return;
     }
     int hex_len = strlen(hex) - 2;
-    char hex_str[hex_len+1];
-    char * beg_of_hex = hex_str+1;
-    int char_len;
-    mycpy(beg_of_hex, hex+2, hex_len); // remove the "0x" at the beginning, prepare a position for potential padding 0
-    if (hex_len % 2 == 1)
+    // char hex_str[hex_len+1];
+    char * hex_str = (char *)malloc((hex_len) * sizeof(char));
+    if (hex_str == NULL)
     {
-        hex_str[0] = '0';
-        beg_of_hex = hex_str;
-        char_len = (hex_len + 1) / 2;
+        return;
+    }
+    int byte_len = (hex_len + 1) / 2;
+    void *byte_ptr = (void *)realloc(dst, byte_len * sizeof(char));
+    if (byte_ptr == NULL)
+    {
+        free(hex_str);
+        return;
     }else
     {
-        char_len = hex_len / 2;
+        dst = byte_ptr;
     }
-    char * ptr = beg_of_hex;
-    while (char_len-- > 0)
-    {
-        sscanf(ptr, "%2hhx", (char *)dst + char_len);
-        ptr += 2;
-    }
-    return;
+
+    mycpy(hex_str, hex+2, hex_len); // remove the "0x" at the beginning, prepare a position for potential padding 0
     
 
-    
-    
+    int ary_pointer = hex_len - 1 - 1; // *(hex_str + ary_pointer) is the -2th char in hex
+    int byte_pointer = 0;
+    while (ary_pointer >= 0 )
+    {
+        if (ary_pointer >= 0) // at least 2 hex left
+        {
+            sscanf(hex_str + ary_pointer, "%2hhx", (char *)dst + byte_pointer); // read 2 hex at a time
+            ary_pointer -= 2;
+            byte_pointer += 1;
+        }else if (ary_pointer == 1) // only 1 hex left
+        {
+            sscanf(hex_str + ary_pointer, "%1hhx", (char *)dst + byte_pointer); // pad 0 at the beginning
+            ary_pointer -= 2;
+            byte_pointer += 1;
+        }
+    }
+    free(hex_str);
+    return;
     
 }
 /*
@@ -413,14 +598,17 @@ Implemented by GuTao.
 
 Panbox *p = NULL;
 
-int main()
+int test1()
 {
     int T;
+    int command_idx = 0;
     scanf("%d", &T);
     while (T--)
     {
         char op;
+        command_idx++;
         scanf(" %c", &op);
+        // printf("Command %d: %c\n", ++command_idx, op);
         switch (op)
         {
         case 'C': {
@@ -519,3 +707,61 @@ Main function implemented by GuTao, you cannot rewrite one for yourself.
 - You can test your functions on your PC with your own main().
 - You may want to hack with your own main function, but this won't help you AC :)
 */
+void testP(Panbox *p)
+{
+    char * inhex = "0x12345678f1add930ad90";
+    int hex_len = strlen(inhex);
+    int item_id;
+    int num_of_byte = (hex_len - 1) / 2;
+    void *data = (void *)malloc(num_of_byte);
+    hex2byte(data, inhex);
+    append(p, data, num_of_byte);
+    append(p, NULL, num_of_byte);
+    append(p, data, 0);
+    append(p, data, -1);
+
+    write(p, 0, data, num_of_byte);
+    write(p, 100, data, num_of_byte);
+    write(p, 2, data, 0);
+    write(p, 2, NULL, 0);
+    write(p, 2, data, -1);
+
+    void * readin = read(p, 0);
+    printc(readin, num_of_byte);
+    printx(readin, num_of_byte);
+    readin = read(p, 100);
+    printc(readin, num_of_byte);
+    printx(readin, num_of_byte);
+    readin = read(p, 2);
+    printc(readin, 0);
+    printx(readin, 0);
+    readin = read(p, -1);
+    printc(readin, 0);
+    printx(readin, 1);
+    printc(readin, -1);
+
+    destroy(p);
+}
+
+
+int test2()
+{
+    Panbox *p = NULL;
+    testP(p);
+    Panbox *p2 = create(0, NULL);
+    testP(p2);
+    int item_size[3] = {1, 2, 3};
+    Panbox *p3 = create(3, item_size);
+    testP(p3);
+    int item_size2[3] = {1, 2, -3};
+    Panbox *p4 = create(3, item_size2);
+    testP(p4);
+    return 0;
+}
+
+int main()
+{
+    // test1();
+    test2();
+    return 0;
+}
